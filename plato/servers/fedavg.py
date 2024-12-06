@@ -197,7 +197,8 @@ class Server(base.Server):
             ########modified:##########
 
             # SVD Decomposition to deltas
-            U, S, Vt = np.linalg.svd(deltas , full_matrices=False)
+            deltas_array= deltas.numpy()  # change pytorch to numpy
+            U, S, Vt = np.linalg.svd(deltas_array , full_matrices=False)
 
             # Define constants n, mu, bar_rho
             n = 0.04  # Example value for n
