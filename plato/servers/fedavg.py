@@ -194,7 +194,7 @@ class Server(base.Server):
             logging.info("[Server #%d] Aggregating model weight deltas.", os.getpid())
             deltas = await self.aggregate_deltas(self.updates, deltas_received)
 
-            ########modified:##########
+
 
 
 
@@ -205,57 +205,66 @@ class Server(base.Server):
             # Loads the new model weights
             self.algorithm.load_weights(updated_weights)
 
+
+        ########modified:##########
         # The model weights have already been aggregated, now calls the
         # corresponding hook and callback
 
-        self.weights_aggregated(self.updates)
-        #modified
+        # updated_weights is likely an OrderedDict of parameter_name -> tensor
+        # Convert each parameter tensor to numpy and stack them into a 2D array.
+        # For example, if we consider each parameter flattened as a column vector:
+        param_arrays = [param.detach().cpu().numpy().flatten() for param in updated_weights.values()]
 
-        print(updated_weights)
-        updated_weights_array = updated_weights.numpy()
-        # change pytorch to numpy
+        all_s_values = []
+        for p_arr in param_arrays:
+            p_arr_2d = p_arr.reshape(-1, 1)
+            U, S, Vt = np.linalg.svd(p_arr_2d, full_matrices=False)
+            all_s_values.extend(S)
 
-        U, S, Vt = np.linalg.svd(updated_weights_array, full_matrices=False)
+        # Compute the global average of all singular values
+        s_average = np.mean(all_s_values)
 
-
-        # Define constants n, mu, bar_rho
+        # Define constants
         n = 0.04  # Example value for n
         mu = 0.5  # Example value for mu
         bar_rho = 1  # Example value for bar_rho
 
-        # Calculate lambda
+        # Calculate lambda_value
         lambda_value = 1 - n * mu * (1 + (3 * bar_rho) / 8)
 
-        # Define constants L, eta, C, D, mu, and bar_rho
+        # Define the rest of the constants
         L = 1.0  # Example value for L
-
         C = 0.2  # Example value for C
         D = 0.1  # Example value for D
-        mu = 0.3  # Example value for mu
+        mu = 0.3  # Example value for mu (redefining mu if intended)
+
+        # Recalculate lambda_value if mu changed
+        lambda_value = 1 - n * mu * (1 + (3 * bar_rho) / 8)
 
         # Calculate x
         x = (4 * L * (n * C + D)) / (mu * (8 + 3 * bar_rho))
 
-        # Define constants
-
-        delta_g = np.trace(S)  # Example value for delta
+        # delta_g is just s_average now
+        delta_g = s_average
 
         A1 = 18
 
-        # Calculate the numerator and denominator
+        # Calculate numerator and denominator
         numerator = delta_g - x
         denominator = (L / mu) * A1 - 1
 
-        # Ensure the inputs are valid for logarithm calculation
-        if numerator > 0 and denominator > 0:
+        # Check conditions for the logarithm
+        if numerator > 0 and denominator > 0 and lambda_value > 0 and lambda_value != 1:
             argument = numerator / denominator
             t = math.log(argument, lambda_value)
             print(f"The value of t is: {t}")
         else:
-            print("Invalid inputs: Logarithm arguments must be positive.")
+            print("Invalid inputs: Logarithm arguments must be positive and lambda_value should be a valid base.")
+            t = -1
 
+        # If t >= current_round, raise StopIteration to stop
         if t >= self.current_round:
-            StopIteration;
+            raise StopIteration
 
         ####### modified
 
